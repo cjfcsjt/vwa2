@@ -144,7 +144,7 @@ def config() -> argparse.Namespace:
         "--captioning_model",
         type=str,
         default="Salesforce/blip2-flan-t5-xl",
-        choices=["Salesforce/blip2-flan-t5-xl", "llava-hf/llava-1.5-7b-hf"],
+        # choices=["Salesforce/blip2-flan-t5-xl", "llava-hf/llava-1.5-7b-hf"],
         help="Captioning backbone for accessibility tree alt text.",
     )
 
@@ -300,7 +300,7 @@ def test(
     agent = construct_agent(
         args,
         captioning_fn=caption_image_fn
-        if args.observation_type == "accessibility_tree_with_captioner"
+        if args.observation_type == "accessibility_tree_with_captioner" or "image_som"
         else None,
     )  # NOTE: captioning_fn here is used for captioning input images.
 
@@ -338,7 +338,8 @@ def test(
                 if _c["storage_state"]:
                     cookie_file_name = os.path.basename(_c["storage_state"])
                     comb = get_site_comb_from_filepath(cookie_file_name)
-                    temp_dir = tempfile.mkdtemp()
+                    # temp_dir = tempfile.mkdtemp()
+                    temp_dir = f".auth"
                     # subprocess to renew the cookie
                     subprocess.run(
                         [
@@ -394,6 +395,8 @@ def test(
                             intent,
                             images=images,
                             meta_data=meta_data,
+                            output_response=True,
+                            logger = logger
                         )
                     except ValueError as e:
                         # get the error message

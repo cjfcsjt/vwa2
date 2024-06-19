@@ -1132,7 +1132,8 @@ class ImageObservationProcessor(ObservationProcessor):
                 self.som_id_info = id2center
                 self.meta_data["obs_nodes_info"] = id2center
                 screenshot_som = np.array(bbox_img)
-                return screenshot_som, content_str
+                screenshot = np.array(screenshot_img)
+                return screenshot_som, content_str, screenshot
             except:
                 page.wait_for_event("load")
                 screenshot_bytes = page.screenshot()
@@ -1146,14 +1147,15 @@ class ImageObservationProcessor(ObservationProcessor):
                 self.som_id_info = id2center
                 self.meta_data["obs_nodes_info"] = id2center
                 screenshot_som = np.array(bbox_img)
-                return screenshot_som, content_str
+                screenshot = np.array(screenshot_img)
+                return screenshot_som, content_str, screenshot
         else:
             try:
                 screenshot = png_bytes_to_numpy(page.screenshot())
             except:
                 page.wait_for_event("load")
                 screenshot = png_bytes_to_numpy(page.screenshot())
-            return screenshot, ""
+            return screenshot, "", screenshot
 
     def fetch_browser_info(self, page: Page) -> BrowserInfo:
         client = page.context.new_cdp_session(page)
@@ -1264,10 +1266,10 @@ class ObservationHandler:
 
     def get_observation(self, page: Page) -> dict[str, Observation]:
         text_obs = self.text_processor.process(page)
-        image_obs, content_str = self.image_processor.process(page)
+        image_obs, content_str, screenshot = self.image_processor.process(page)
         if content_str != "":
             text_obs = content_str
-        return {"text": text_obs, "image": image_obs}
+        return {"text": text_obs, "image": image_obs, 'screenshot': screenshot}
 
     def get_observation_metadata(self) -> dict[str, ObservationMetadata]:
         return {

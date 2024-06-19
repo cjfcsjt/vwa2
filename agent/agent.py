@@ -24,7 +24,8 @@ from llms import (
     lm_config,
 )
 from llms.tokenizers import Tokenizer
-
+import os 
+from PIL import Image, ImageDraw
 
 class Agent:
     """Base class for the agent"""
@@ -116,7 +117,7 @@ class PromptAgent(Agent):
         self.captioning_fn = captioning_fn
 
         # Check if the model is multimodal.
-        if ("gemini" in lm_config.model or "gpt-4" in lm_config.model and "vision" in lm_config.model) and type(prompt_constructor) == MultimodalCoTPromptConstructor:
+        if ("gemini" in lm_config.model or "gpt-4" in lm_config.model and "vision" in lm_config.model or '4o' in lm_config.model) and type(prompt_constructor) == MultimodalCoTPromptConstructor:
             self.multimodal_inputs = True
         else:
             self.multimodal_inputs = False
@@ -127,14 +128,18 @@ class PromptAgent(Agent):
     @beartype
     def next_action(
         self, trajectory: Trajectory, intent: str, meta_data: dict[str, Any], images: Optional[list[Image.Image]] = None,
-        output_response: bool = False
+        output_response: bool = False, logger = None
     ) -> Action:
         # Create page screenshot image for multimodal models.
         if self.multimodal_inputs:
             page_screenshot_arr = trajectory[-1]["observation"]["image"]
+            page_screenshot_arr_ori = trajectory[-1]["observation"]["screenshot"]
             page_screenshot_img = Image.fromarray(
                 page_screenshot_arr
             )  # size = (viewport_width, viewport_width)
+            page_screenshot_img_ori = Image.fromarray(
+                page_screenshot_arr_ori
+            )
 
         # Caption the input image, if provided.
         if images is not None and len(images) > 0:
@@ -155,6 +160,16 @@ class PromptAgent(Agent):
                 )
 
         if self.multimodal_inputs:
+            # gnd caption prior
+            gnd_prompt = self.prompt_constructor.construct_gnd(
+                trajectory, intent, page_screenshot_img, images, meta_data
+            )
+            subtask_response = call_llm(self.lm_config, gnd_prompt)
+            gnd_response = self.captioning_fn([page_screenshot_img_ori], subtask_response)
+            point = list(eval(gnd_response))
+            width, height = page_screenshot_img.size
+            meta_data["gnd_response"] = (point[0] / 100 * width, point[1] / 100 * height)
+            
             prompt = self.prompt_constructor.construct(
                 trajectory, intent, page_screenshot_img, images, meta_data
             )
@@ -171,7 +186,21 @@ class PromptAgent(Agent):
             ].get("force_prefix", "")
             response = f"{force_prefix}{response}"
             if output_response:
-                print(f'Agent: {response}', flush=True)
+                draw = ImageDraw.Draw(page_screenshot_img)
+                # Define the radius of the point to draw (adjust as necessary)
+                radius = 15
+
+                # Draw the point (circle) on the image
+                # draw.ellipse((point_coords[0] - radius, point_coords[1] - radius,
+                #             point_coords[0] + radius, point_coords[1] + radius), fill='red', outline='red')
+                draw.ellipse((meta_data["gnd_response"][0] - radius, meta_data["gnd_response"][1] - radius,
+                            meta_data["gnd_response"][0] + radius, meta_data["gnd_response"][1] + radius), fill='blue', outline='blue')
+
+                # Save the image with a new name or display it
+                new_image_path = os.path.join('results', f'point_screenshot.jpg')
+                page_screenshot_img.save(new_image_path)
+                logger.info(f"target element id: {prompt[-1]['content'][0]['text'].split('TARGET ELEMENTS ID:')[-1]}")
+                logger.info(f'Agent: {response}')
             n += 1
             try:
                 parsed_response = self.prompt_constructor.extract_action(
@@ -188,11 +217,15 @@ class PromptAgent(Agent):
                         f"Unknown action type {self.action_set_tag}"
                     )
                 action["raw_prediction"] = response
+                action["screenshot_point"] = page_screenshot_img
+                action["subtask"] = subtask_response
                 break
             except ActionParsingError as e:
                 if n >= lm_config.gen_config["max_retry"]:
                     action = create_none_action()
                     action["raw_prediction"] = response
+                    action["screenshot_point"] = page_screenshot_img
+                    action["subtask"] = subtask_response
                     break
 
         return action

@@ -11,6 +11,17 @@ from llms import lm_config
 from llms.tokenizers import Tokenizer
 from llms.utils import APIInput
 
+def find_bboxes_containing_point(bboxes, point):
+    x_point, y_point = point
+    containing_bboxes = []
+    for bbox_id, (x1, y1, x2, y2) in bboxes.items():
+        if x1 <= x_point <= x2 and y1 <= y_point <= y2:
+            containing_bboxes.append(bbox_id)
+    if len(containing_bboxes)==0:
+        return ''
+    else:
+        target = ','.joint(containing_bboxes)
+        return f"The target element could be {target}"
 
 class Instruction(TypedDict):
     """Instruction for constructing prompt"""
@@ -293,6 +304,51 @@ class MultimodalCoTPromptConstructor(CoTPromptConstructor):
         examples = self.instruction["examples"]
         template = self.instruction["template"]
         keywords = self.instruction["meta_data"]["keywords"]
+        state_info: StateInfo = trajectory[-1]  # type: ignore[assignment]
+
+        obs = state_info["observation"][self.obs_modality]
+        element_dict = state_info['info']['observation_metadata']['image']['obs_nodes_info']
+        target_els = find_bboxes_containing_point(element_dict, meta_data['gnd_response'])
+        max_obs_length = self.lm_config.gen_config["max_obs_length"]
+        if max_obs_length:
+            if self.lm_config.provider == "google":
+                print("NOTE: This is a Gemini model, so we use characters instead of tokens for max_obs_length.")
+                obs = obs[:max_obs_length]
+            else:
+                obs = self.tokenizer.decode(self.tokenizer.encode(obs)[:max_obs_length])  # type: ignore[arg-type]
+
+        page = state_info["info"]["page"]
+        url = page.url
+        previous_action_str = meta_data["action_history"][-1]
+        current = template.format(
+            objective=intent,
+            url=self.map_url_to_real(url),
+            observation=obs,
+            previous_action=previous_action_str,
+            target_elements = target_els,
+        )
+
+        assert all([f"{{k}}" not in current for k in keywords])
+
+        prompt = self.get_lm_api_input(
+            intro, examples, current, page_screenshot_img, images
+        )
+        return prompt
+    
+    def construct_gnd(
+        self,
+        trajectory: Trajectory,
+        intent: str,
+        page_screenshot_img: Image.Image,
+        images: list[Image.Image],
+        meta_data: dict[str, Any] = {},
+    ) -> APIInput:
+        instruction_path = 'agent/prompts/jsons/subtask.json'
+        instruction = json.load(open(instruction_path))
+        intro = instruction["intro"]
+        examples = instruction["examples"]
+        template = instruction["template"]
+        keywords = instruction["meta_data"]["keywords"]
         state_info: StateInfo = trajectory[-1]  # type: ignore[assignment]
 
         obs = state_info["observation"][self.obs_modality]

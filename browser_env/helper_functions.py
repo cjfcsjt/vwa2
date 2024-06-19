@@ -205,9 +205,28 @@ class RenderHelper(object):
             image_bytes = base64.b64encode(byte_io.read())
             image_str = image_bytes.decode("utf-8")
             new_content += f"<img src='data:image/png;base64,{image_str}' style='width:50vw; height:auto;'/>\n"
-
+            if 'screenshot_point' in action:
+                img_obs = action["screenshot_point"]
+                image = img_obs
+                byte_io = io.BytesIO()
+                image.save(byte_io, format="PNG")
+                byte_io.seek(0)
+                image_bytes = base64.b64encode(byte_io.read())
+                image_str = image_bytes.decode("utf-8")
+                new_content += f"<img src='data:image/png;base64,{image_str}' style='width:50vw; height:auto;'/>\n"
+            if 'screenshot' in observation:
+                img_obs = observation["screenshot"]
+                image = Image.fromarray(img_obs)
+                byte_io = io.BytesIO()
+                image.save(byte_io, format="PNG")
+                byte_io.seek(0)
+                image_bytes = base64.b64encode(byte_io.read())
+                image_str = image_bytes.decode("utf-8")
+                new_content += f"<img src='data:image/png;base64,{image_str}' style='width:50vw; height:auto;'/>\n"
         # meta data
         new_content += f"<div class='prev_action' style='background-color:pink'>{meta_data['action_history'][-1]}</div>\n"
+        if 'subtask' in action:
+            new_content += f"<div class='subtask' style='background-color:pink'>{action['subtask']}</div>\n"
 
         # action
         action_str = get_render_action(
